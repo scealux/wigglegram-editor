@@ -6,6 +6,7 @@ export default function PreviewPlayer({
   frames, // [canvas ×3] at preview scale, uncropped
   sequence, // [{frame, duration}]
   playing,
+  onTogglePlay,
   previewScale, // source px → preview canvas px
   crop, // {enabled, rect} — rect in source coords, or null
   onCropChange,
@@ -129,6 +130,9 @@ export default function PreviewPlayer({
         onPointerMove={onPointerMove}
         onPointerUp={() => (dragRef.current = null)}
       />
+      <div className="player-controls">
+        <button onClick={onTogglePlay}>{playing ? '❚❚ Pause' : '▶ Play'}</button>
+      </div>
     </div>
   )
 }

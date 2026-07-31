@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AlignView from './components/AlignView.jsx'
 import PreviewPlayer from './components/PreviewPlayer.jsx'
+import Histograms from './components/Histograms.jsx'
 import { splitThirds, detectBoundaries, splitAtBoundaries } from './lib/frames.js'
 import { defaultFrameAdjust, defaultGlobalAdjust, computeExposureMatch } from './lib/adjust.js'
 import { composeFrames, overlapRect, buildSequence } from './lib/compose.js'
@@ -260,12 +261,9 @@ export default function App() {
               >
                 2 · Preview
               </button>
-              {tab === 'preview' && (
-                <button onClick={() => setPlaying((p) => !p)}>{playing ? 'Pause' : 'Play'}</button>
-              )}
               <span className="hint">
                 {tab === 'align'
-                  ? 'Click (and drag to fine-tune) the same point in all three frames — that point becomes the pivot of the wiggle.'
+                  ? 'Click the same point in all three frames — that point becomes the pivot of the wiggle.'
                   : crop.enabled
                     ? 'Drag the crop box or its corners.'
                     : ''}
@@ -280,6 +278,7 @@ export default function App() {
                     frames={previewFrames}
                     sequence={sequence}
                     playing={playing}
+                    onTogglePlay={() => setPlaying((p) => !p)}
                     previewScale={previewScale}
                     crop={crop}
                     onCropChange={(rect) => setCrop((c) => ({ ...c, rect }))}
@@ -378,16 +377,24 @@ export default function App() {
               <button className={adjust.matchEnabled ? 'toggled' : ''} onClick={toggleAutoMatch}>
                 {adjust.matchEnabled ? '✓ Auto-match on (click to disable)' : 'Auto-match frames'}
               </button>
+              <Histograms frames={previewFrames} selected={adjFrameSel} onSelect={setAdjFrameSel} />
               <div className="seg">
-                {FRAME_LABELS.map((label, i) => (
-                  <button
-                    key={i}
-                    className={adjFrameSel === i ? 'toggled' : ''}
-                    onClick={() => setAdjFrameSel(i)}
-                  >
-                    {label}
-                  </button>
-                ))}
+                {FRAME_LABELS.map((label, i) => {
+                  const f = adjust.frames[i]
+                  const touched =
+                    f.brightness !== 0 || f.contrast !== 0 || f.saturation !== 1 ||
+                    (adjust.matchEnabled && i !== 1)
+                  return (
+                    <button
+                      key={i}
+                      className={adjFrameSel === i ? 'toggled' : ''}
+                      onClick={() => setAdjFrameSel(i)}
+                    >
+                      {label}
+                      {touched && <span className="dot" />}
+                    </button>
+                  )
+                })}
               </div>
               <AdjustSliders values={adjust.frames[adjFrameSel]} onChange={setFrameAdj} />
               <h2 style={{ marginTop: 4 }}>All frames</h2>
@@ -464,44 +471,29 @@ export default function App() {
 }
 
 function AdjustSliders({ values, onChange }) {
+  const rows = [
+    { key: 'brightness', label: 'Brightness', min: -60, max: 60, step: 1, def: 0 },
+    { key: 'contrast', label: 'Contrast', min: -60, max: 60, step: 1, def: 0 },
+    { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.02, def: 1 },
+  ]
   return (
     <>
-      <div className="row">
-        <label>Brightness</label>
-        <input
-          type="range"
-          min="-60"
-          max="60"
-          step="1"
-          value={values.brightness}
-          onChange={(e) => onChange('brightness', +e.target.value)}
-        />
-        <span className="val">{values.brightness}</span>
-      </div>
-      <div className="row">
-        <label>Contrast</label>
-        <input
-          type="range"
-          min="-60"
-          max="60"
-          step="1"
-          value={values.contrast}
-          onChange={(e) => onChange('contrast', +e.target.value)}
-        />
-        <span className="val">{values.contrast}</span>
-      </div>
-      <div className="row">
-        <label>Saturation</label>
-        <input
-          type="range"
-          min="0"
-          max="2"
-          step="0.02"
-          value={values.saturation}
-          onChange={(e) => onChange('saturation', +e.target.value)}
-        />
-        <span className="val">{values.saturation.toFixed(2)}</span>
-      </div>
+      {rows.map(({ key, label, min, max, step, def }) => (
+        <div className={`row ${values[key] !== def ? 'changed' : ''}`} key={key}>
+          <label>{label}</label>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={values[key]}
+            onChange={(e) => onChange(key, +e.target.value)}
+          />
+          <span className="val">
+            {key === 'saturation' ? values[key].toFixed(2) : values[key]}
+          </span>
+        </div>
+      ))}
     </>
   )
 }
