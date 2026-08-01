@@ -1,11 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronRight, faXmark } from '@fortawesome/free-solid-svg-icons'
+import {
+  faChevronLeft,
+  faChevronRight,
+  faXmark,
+  faBorderAll,
+  faClock,
+  faSliders,
+  faCrop,
+  faDownload,
+} from '@fortawesome/free-solid-svg-icons'
 import AlignView from './components/AlignView.jsx'
 import PreviewPlayer from './components/PreviewPlayer.jsx'
 import Histograms from './components/Histograms.jsx'
 import { splitThirds, detectBoundaries, splitAtBoundaries } from './lib/frames.js'
-import { defaultFrameAdjust, defaultGlobalAdjust, computeExposureMatch } from './lib/adjust.js'
+import { defaultFrameAdjust, defaultGlobalAdjust, computeExposureMatch, isDefaultAdjust } from './lib/adjust.js'
 import { composeFrames, overlapRect, buildSequence } from './lib/compose.js'
 import { exportGif, exportMp4, exportWebp, exportStills, mp4Supported, webpSupported } from './lib/exporters.js'
 import { loadSettings, saveSettings } from './lib/settings.js'
@@ -47,7 +56,15 @@ export default function App() {
   const holdFrameFor = (i, ms = 1200) => {
     setHoldFrame(i)
     clearTimeout(holdTimerRef.current)
-    holdTimerRef.current = setTimeout(() => setHoldFrame(null), ms)
+    // While paused, the held frame lingers so you can keep editing it; when
+    // playing, the animation resumes shortly after the last change.
+    if (playing) holdTimerRef.current = setTimeout(() => setHoldFrame(null), ms)
+  }
+
+  const togglePlay = () => {
+    clearTimeout(holdTimerRef.current)
+    setHoldFrame(null)
+    setPlaying((p) => !p)
   }
   const [crop, setCrop] = useState({ enabled: false, rect: null })
   const [exportOpts, setExportOpts] = useState(saved.exportOpts || { size: 720, mp4Duration: 4 })
@@ -195,12 +212,17 @@ export default function App() {
 
   const toggleAutoMatch = () => {
     if (!adjust.matchEnabled) {
-      if (!match) setMatch(computeExposureMatch(image.bitmap, frameRects))
+      // Match the other frames to the currently selected frame, including its
+      // current slider state — recomputed on every enable.
+      setMatch(computeExposureMatch(image.bitmap, frameRects, adjFrameSel, adjust.frames))
       setAdjust((a) => ({ ...a, matchEnabled: true }))
     } else {
       setAdjust((a) => ({ ...a, matchEnabled: false }))
     }
   }
+
+  // Which frame the active match was computed against (null entry = reference)
+  const matchRef = adjust.matchEnabled && match ? match.findIndex((m) => m === null) : null
 
   const setFrameAdj = (key, value) => {
     holdFrameFor(adjFrameSel)
@@ -375,7 +397,7 @@ export default function App() {
                     frames={previewFrames}
                     sequence={sequence}
                     playing={playing}
-                    onTogglePlay={() => setPlaying((p) => !p)}
+                    onTogglePlay={togglePlay}
                     holdFrame={holdFrame}
                     previewScale={previewScale}
                     crop={crop}
@@ -405,7 +427,9 @@ export default function App() {
 
           <aside className="panel">
             <div className="section">
-              <h2>Frames</h2>
+              <h2>
+                <FontAwesomeIcon icon={faBorderAll} /> Frames
+              </h2>
               <div className="seg">
                 <button
                   className={splitMode === 'thirds' ? 'toggled' : ''}
@@ -453,7 +477,9 @@ export default function App() {
             </div>
 
             <div className="section">
-              <h2>Timing</h2>
+              <h2>
+                <FontAwesomeIcon icon={faClock} /> Timing
+              </h2>
               <div className="row">
                 <label>Speed</label>
                 <input
@@ -463,6 +489,8 @@ export default function App() {
                   step="0.05"
                   value={timing.speed}
                   onChange={(e) => setTiming({ ...timing, speed: +e.target.value })}
+                  onDoubleClick={() => setTiming({ ...timing, speed: 1 })}
+                  title="Double-click to reset"
                 />
                 <span className="val">{timing.speed.toFixed(2)}×</span>
               </div>
@@ -480,6 +508,12 @@ export default function App() {
                       perFrame[i] = +e.target.value
                       setTiming({ ...timing, perFrame })
                     }}
+                    onDoubleClick={() => {
+                      const perFrame = [...timing.perFrame]
+                      perFrame[i] = 90
+                      setTiming({ ...timing, perFrame })
+                    }}
+                    title="Double-click to reset"
                   />
                   <span className="val">{timing.perFrame[i]}ms</span>
                 </div>
@@ -488,17 +522,19 @@ export default function App() {
             </div>
 
             <div className="section">
-              <h2>Exposure & color</h2>
+              <h2>
+                <FontAwesomeIcon icon={faSliders} /> Exposure & color
+              </h2>
               <button className={adjust.matchEnabled ? 'toggled' : ''} onClick={toggleAutoMatch}>
-                {adjust.matchEnabled ? '✓ Auto-match on (click to disable)' : 'Auto-match frames'}
+                {adjust.matchEnabled
+                  ? `✓ Matched to ${FRAME_LABELS[matchRef] ?? 'Center'} (click to disable)`
+                  : `Auto-match others to ${FRAME_LABELS[adjFrameSel]}`}
               </button>
               <Histograms frames={previewFrames} selected={adjFrameSel} onSelect={selectAdjFrame} />
               <div className="seg">
                 {FRAME_LABELS.map((label, i) => {
                   const f = adjust.frames[i]
-                  const touched =
-                    f.brightness !== 0 || f.contrast !== 0 || f.saturation !== 1 ||
-                    (adjust.matchEnabled && i !== 1)
+                  const touched = !isDefaultAdjust(f) || (adjust.matchEnabled && !!match?.[i])
                   return (
                     <button
                       key={i}
@@ -518,7 +554,9 @@ export default function App() {
             </div>
 
             <div className="section">
-              <h2>Crop</h2>
+              <h2>
+                <FontAwesomeIcon icon={faCrop} /> Crop
+              </h2>
               <div className="btn-row">
                 <button className={crop.enabled ? 'toggled' : ''} onClick={toggleCrop}>
                   {crop.enabled ? 'Crop: on' : 'Crop: off'}
@@ -534,7 +572,9 @@ export default function App() {
             </div>
 
             <div className="section">
-              <h2>Export</h2>
+              <h2>
+                <FontAwesomeIcon icon={faDownload} /> Export
+              </h2>
               <div className="row">
                 <label>Max size</label>
                 <select
@@ -568,10 +608,10 @@ export default function App() {
                 </button>
               </div>
               <div className="btn-row">
-                <button disabled={!!busy || !canWebp} onClick={() => doExport('webp')}>
+                <button className="primary" disabled={!!busy || !canWebp} onClick={() => doExport('webp')}>
                   WebP
                 </button>
-                <button disabled={!!busy} onClick={() => doExport('stills')}>
+                <button className="primary" disabled={!!busy} onClick={() => doExport('stills')}>
                   Still frames
                 </button>
               </div>
@@ -590,22 +630,26 @@ function AdjustSliders({ values, onChange }) {
     { key: 'brightness', label: 'Brightness', min: -60, max: 60, step: 1, def: 0 },
     { key: 'contrast', label: 'Contrast', min: -60, max: 60, step: 1, def: 0 },
     { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.02, def: 1 },
+    { key: 'temperature', label: 'Temperature', min: -100, max: 100, step: 1, def: 0 },
+    { key: 'tint', label: 'Tint', min: -100, max: 100, step: 1, def: 0 },
   ]
   return (
     <>
       {rows.map(({ key, label, min, max, step, def }) => (
-        <div className={`row ${values[key] !== def ? 'changed' : ''}`} key={key}>
+        <div className={`row ${(values[key] ?? def) !== def ? 'changed' : ''}`} key={key}>
           <label>{label}</label>
           <input
             type="range"
             min={min}
             max={max}
             step={step}
-            value={values[key]}
+            value={values[key] ?? def}
             onChange={(e) => onChange(key, +e.target.value)}
+            onDoubleClick={() => onChange(key, def)}
+            title="Double-click to reset"
           />
           <span className="val">
-            {key === 'saturation' ? values[key].toFixed(2) : values[key]}
+            {key === 'saturation' ? (values[key] ?? def).toFixed(2) : (values[key] ?? def)}
           </span>
         </div>
       ))}

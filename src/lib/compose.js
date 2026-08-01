@@ -1,4 +1,4 @@
-import { buildLuts, applyAdjustments } from './adjust.js'
+import { buildLuts, applyAdjustments, isDefaultAdjust } from './adjust.js'
 
 // Alignment offsets: shift each frame so its selected point lands where the
 // center frame's point is. Offsets are in source pixels, relative to the frame.
@@ -39,10 +39,7 @@ export function composeFrames({ bitmap, frameRects, points, adjust, match, scale
     const frameAdj = adjust.frames[i]
     const globalAdj = adjust.global
     const frameMatch = adjust.matchEnabled ? match?.[i] : null
-    const needsWork =
-      frameMatch ||
-      frameAdj.brightness !== 0 || frameAdj.contrast !== 0 || frameAdj.saturation !== 1 ||
-      globalAdj.brightness !== 0 || globalAdj.contrast !== 0 || globalAdj.saturation !== 1
+    const needsWork = frameMatch || !isDefaultAdjust(frameAdj) || !isDefaultAdjust(globalAdj)
     if (needsWork) {
       const luts = buildLuts(frameAdj, globalAdj, frameMatch)
       const imageData = ctx.getImageData(0, 0, outW, outH)

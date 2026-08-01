@@ -1,15 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { buildLuts, applyAdjustments } from '../lib/adjust.js'
+import { buildLuts, applyAdjustments, isDefaultAdjust } from '../lib/adjust.js'
 
 const LABELS = ['Left', 'Center', 'Right']
 const DISPLAY_H = 1300 // canvas pixel height (CSS scales it down)
 const LOUPE = 300 // loupe size in canvas px
 const ZOOMS = [1, 2, 4] // loupe px per source px
 
-const hasWork = (p) =>
-  !!p.match ||
-  p.fa.brightness !== 0 || p.fa.contrast !== 0 || p.fa.saturation !== 1 ||
-  p.ga.brightness !== 0 || p.ga.contrast !== 0 || p.ga.saturation !== 1
+const hasWork = (p) => !!p.match || !isDefaultAdjust(p.fa) || !isDefaultAdjust(p.ga)
 
 function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
   const canvasRef = useRef(null)

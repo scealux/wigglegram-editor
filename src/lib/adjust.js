@@ -1,7 +1,22 @@
 // Per-frame + global color adjustments, and auto exposure matching.
 
-export const defaultFrameAdjust = () => ({ brightness: 0, contrast: 0, saturation: 1 })
-export const defaultGlobalAdjust = () => ({ brightness: 0, contrast: 0, saturation: 1 })
+export const defaultFrameAdjust = () => ({ brightness: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0 })
+export const defaultGlobalAdjust = () => ({ brightness: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0 })
+
+export const isDefaultAdjust = (a) =>
+  a.brightness === 0 && a.contrast === 0 && a.saturation === 1 &&
+  !(a.temperature || 0) && !(a.tint || 0)
+
+// Per-channel offset for temperature (warm ↔ cool) and tint (magenta ↔ green).
+// Positive temperature warms (R up, B down); positive tint shifts magenta
+// (G down, R/B up slightly).
+export function channelOffset(adj, c) {
+  const t = adj.temperature || 0
+  const ti = adj.tint || 0
+  const temp = c === 0 ? 0.6 * t : c === 2 ? -0.6 * t : 0
+  const tint = c === 1 ? -0.6 * ti : 0.3 * ti
+  return temp + tint
+}
 
 // Build one 256-entry LUT per channel combining: match gain/offset (per channel),
 // per-frame brightness/contrast, then global brightness/contrast.
@@ -12,11 +27,13 @@ export function buildLuts(frameAdj, globalAdj, match) {
   for (let c = 0; c < 3; c++) {
     const gain = match ? match.gain[c] : 1
     const offset = match ? match.offset[c] : 0
+    const frameOff = frameAdj.brightness + channelOffset(frameAdj, c)
+    const globalOff = globalAdj.brightness + channelOffset(globalAdj, c)
     const lut = new Uint8ClampedArray(256)
     for (let v = 0; v < 256; v++) {
       let x = gain * v + offset
-      x = (x - 128) * kf + 128 + frameAdj.brightness
-      x = (x - 128) * kg + 128 + globalAdj.brightness
+      x = (x - 128) * kf + 128 + frameOff
+      x = (x - 128) * kg + 128 + globalOff
       lut[v] = x
     }
     luts.push(lut)
@@ -83,20 +100,42 @@ function frameStats(bitmap, rect) {
   return { mean, std }
 }
 
-// Compute gain/offset for outer frames so their center-region statistics match
-// the center frame's. Returns [matchL, null, matchR] (center is the reference).
-export function computeExposureMatch(bitmap, frameRects) {
-  const ref = frameStats(bitmap, frameRects[1])
+// Compute per-channel gain/offset so the other frames' center-region statistics
+// match the reference frame's — including the reference's current
+// brightness/contrast sliders, so matching targets the look you've dialed in.
+// Returns an array of 3 with null at the reference index.
+//
+// The LUT pipeline applies match first, then each frame's own sliders
+// (v → k·(g·v + o − 128) + 128 + b), so gain/offset are solved to land on the
+// target *after* that frame's sliders run.
+export function computeExposureMatch(bitmap, frameRects, refIndex = 1, frameAdjusts = null) {
+  const fa = (i) => frameAdjusts?.[i] ?? { brightness: 0, contrast: 0 }
+  const rawStats = frameRects.map((r) => frameStats(bitmap, r))
+
+  const refAdj = fa(refIndex)
+  const kRef = contrastK(refAdj.contrast)
+  const target = {
+    mean: rawStats[refIndex].mean.map(
+      (m, c) => kRef * (m - 128) + 128 + refAdj.brightness + channelOffset(refAdj, c)
+    ),
+    std: rawStats[refIndex].std.map((s) => kRef * s),
+  }
+
   const result = [null, null, null]
-  for (const i of [0, 2]) {
-    const s = frameStats(bitmap, frameRects[i])
+  for (let i = 0; i < 3; i++) {
+    if (i === refIndex) continue
+    const adj = fa(i)
+    const k = contrastK(adj.contrast)
+    const s = rawStats[i]
     const gain = []
     const offset = []
     for (let c = 0; c < 3; c++) {
-      let g = s.std[c] > 1 ? ref.std[c] / s.std[c] : 1
-      g = Math.min(1.6, Math.max(0.6, g))
+      let g = s.std[c] > 1 ? target.std[c] / (k * s.std[c]) : 1
+      g = Math.min(2, Math.max(0.5, g))
       gain.push(g)
-      offset.push(ref.mean[c] - g * s.mean[c])
+      offset.push(
+        (target.mean[c] - 128 - adj.brightness - channelOffset(adj, c)) / k + 128 - g * s.mean[c]
+      )
     }
     result[i] = { gain, offset }
   }

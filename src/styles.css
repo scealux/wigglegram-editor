@@ -248,6 +248,12 @@ button.toggled {
   font-weight: 600;
 }
 
+.section h2 svg {
+  margin-right: 4px;
+  color: var(--accent);
+  opacity: 0.8;
+}
+
 .row {
   display: flex;
   align-items: center;
