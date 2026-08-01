@@ -361,7 +361,14 @@ export default function App() {
             </button>
             <div className="stage-body">
               {tab === 'align' ? (
-                <AlignView image={image} frameRects={frameRects} points={points} onSetPoint={setPoint} />
+                <AlignView
+                  image={image}
+                  frameRects={frameRects}
+                  points={points}
+                  onSetPoint={setPoint}
+                  adjust={adjust}
+                  match={match}
+                />
               ) : (
                 previewFrames && (
                   <PreviewPlayer

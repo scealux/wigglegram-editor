@@ -1,14 +1,24 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { buildLuts, applyAdjustments } from '../lib/adjust.js'
 
 const LABELS = ['Left', 'Center', 'Right']
 const DISPLAY_H = 1300 // canvas pixel height (CSS scales it down)
 const LOUPE = 300 // loupe size in canvas px
 const ZOOMS = [1, 2, 4] // loupe px per source px
 
-function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom }) {
+const hasWork = (p) =>
+  !!p.match ||
+  p.fa.brightness !== 0 || p.fa.contrast !== 0 || p.fa.saturation !== 1 ||
+  p.ga.brightness !== 0 || p.ga.contrast !== 0 || p.ga.saturation !== 1
+
+function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
   const canvasRef = useRef(null)
+  const loupeSrcRef = useRef(null)
   const [cursor, setCursor] = useState(null) // frame-local source coords while dragging
   const [focused, setFocused] = useState(false)
+  // Panel-resolution copy of the frame with exposure/color adjustments baked in,
+  // so the align view shows the same look as the preview.
+  const [adjusted, setAdjusted] = useState(null)
   const draggingRef = useRef(false)
   // Latest point, updated synchronously so fast key-repeat doesn't read a
   // stale value between React renders.
@@ -21,13 +31,36 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom }) {
   const cw = Math.round(rect.w * dispScale)
   const ch = DISPLAY_H
 
+  const luts = useMemo(() => (hasWork(params) ? buildLuts(params.fa, params.ga, params.match) : null), [params])
+  const saturation = params.fa.saturation * params.ga.saturation
+
+  // Rebuild the adjusted panel bitmap when the frame or its adjustments change
+  // (debounced — slider drags fire rapidly).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const c = document.createElement('canvas')
+      c.width = cw
+      c.height = ch
+      const ctx = c.getContext('2d', { willReadFrequently: true })
+      ctx.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, cw, ch)
+      if (luts) {
+        const imageData = ctx.getImageData(0, 0, cw, ch)
+        applyAdjustments(imageData, luts, saturation)
+        ctx.putImageData(imageData, 0, 0)
+      }
+      setAdjusted(c)
+    }, 100)
+    return () => clearTimeout(t)
+  }, [bitmap, rect.x, rect.y, rect.w, rect.h, cw, ch, luts, saturation])
+
   // Loupe anchor: the drag cursor while dragging, else the set point when focused
   const loupeAt = cursor || (focused && point ? point : null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
-    ctx.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, cw, ch)
+    if (adjusted) ctx.drawImage(adjusted, 0, 0)
+    else ctx.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, cw, ch)
 
     if (point) {
       const x = point.x * dispScale
@@ -56,19 +89,35 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom }) {
       lx = Math.max(0, Math.min(cw - LOUPE, lx))
       ly = Math.max(0, Math.min(ch - LOUPE, ly))
 
+      // Render the zoomed region (with adjustments) into an offscreen canvas so
+      // the pixel pass never touches what's already drawn on the panel.
+      if (!loupeSrcRef.current) {
+        loupeSrcRef.current = document.createElement('canvas')
+        loupeSrcRef.current.width = LOUPE
+        loupeSrcRef.current.height = LOUPE
+      }
+      const lc = loupeSrcRef.current
+      const lctx = lc.getContext('2d', { willReadFrequently: true })
+      lctx.fillStyle = '#000'
+      lctx.fillRect(0, 0, LOUPE, LOUPE)
+      lctx.imageSmoothingEnabled = zoom < 2
+      lctx.drawImage(
+        bitmap,
+        rect.x + loupeAt.x - src / 2, rect.y + loupeAt.y - src / 2, src, src,
+        0, 0, LOUPE, LOUPE
+      )
+      lctx.imageSmoothingEnabled = true
+      if (luts) {
+        const imageData = lctx.getImageData(0, 0, LOUPE, LOUPE)
+        applyAdjustments(imageData, luts, saturation)
+        lctx.putImageData(imageData, 0, 0)
+      }
+
       ctx.save()
       ctx.beginPath()
       ctx.arc(lx + LOUPE / 2, ly + LOUPE / 2, LOUPE / 2, 0, Math.PI * 2)
       ctx.clip()
-      ctx.fillStyle = '#000'
-      ctx.fillRect(lx, ly, LOUPE, LOUPE)
-      ctx.imageSmoothingEnabled = zoom < 2
-      ctx.drawImage(
-        bitmap,
-        rect.x + loupeAt.x - src / 2, rect.y + loupeAt.y - src / 2, src, src,
-        lx, ly, LOUPE, LOUPE
-      )
-      ctx.imageSmoothingEnabled = true
+      ctx.drawImage(lc, lx, ly)
       ctx.strokeStyle = '#ffb347'
       ctx.lineWidth = 2
       ctx.beginPath()
@@ -84,7 +133,7 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom }) {
       ctx.arc(lx + LOUPE / 2, ly + LOUPE / 2, LOUPE / 2, 0, Math.PI * 2)
       ctx.stroke()
     }
-  }, [bitmap, rect.x, rect.y, rect.w, rect.h, point, loupeAt, zoom, cw, ch, dispScale])
+  }, [bitmap, adjusted, rect.x, rect.y, rect.w, rect.h, point, loupeAt, zoom, luts, saturation, cw, ch, dispScale])
 
   const toFrameCoords = (e) => {
     const canvas = canvasRef.current
@@ -152,8 +201,21 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom }) {
   )
 }
 
-export default function AlignView({ image, frameRects, points, onSetPoint }) {
+export default function AlignView({ image, frameRects, points, onSetPoint, adjust, match }) {
   const [zoom, setZoom] = useState(2)
+
+  // Stable per-frame adjustment params so point-only re-renders don't rebuild
+  // the adjusted panel bitmaps.
+  const perFrame = useMemo(
+    () =>
+      [0, 1, 2].map((i) => ({
+        fa: adjust.frames[i],
+        ga: adjust.global,
+        match: adjust.matchEnabled ? match?.[i] ?? null : null,
+      })),
+    [adjust, match]
+  )
+
   return (
     <div className="align-outer">
       <div className="align-toolbar">
@@ -178,6 +240,7 @@ export default function AlignView({ image, frameRects, points, onSetPoint }) {
             point={points[i]}
             label={LABELS[i]}
             zoom={zoom}
+            params={perFrame[i]}
             onSetPoint={(p) => onSetPoint(i, p)}
           />
         ))}
