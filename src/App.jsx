@@ -39,6 +39,16 @@ export default function App() {
   const [adjust, setAdjust] = useState(freshAdjust())
   const [match, setMatch] = useState(null)
   const [adjFrameSel, setAdjFrameSel] = useState(0)
+  // While the user adjusts one frame's settings, the preview holds that frame
+  // so the change is actually visible (a wiggling preview only shows each
+  // frame for ~100ms at a time).
+  const [holdFrame, setHoldFrame] = useState(null)
+  const holdTimerRef = useRef(null)
+  const holdFrameFor = (i, ms = 1200) => {
+    setHoldFrame(i)
+    clearTimeout(holdTimerRef.current)
+    holdTimerRef.current = setTimeout(() => setHoldFrame(null), ms)
+  }
   const [crop, setCrop] = useState({ enabled: false, rect: null })
   const [exportOpts, setExportOpts] = useState(saved.exportOpts || { size: 720, mp4Duration: 4 })
   const [previewFrames, setPreviewFrames] = useState(null)
@@ -193,10 +203,16 @@ export default function App() {
   }
 
   const setFrameAdj = (key, value) => {
+    holdFrameFor(adjFrameSel)
     setAdjust((a) => {
       const frames = a.frames.map((f, i) => (i === adjFrameSel ? { ...f, [key]: value } : f))
       return { ...a, frames }
     })
+  }
+
+  const selectAdjFrame = (i) => {
+    setAdjFrameSel(i)
+    holdFrameFor(i)
   }
 
   const setGlobalAdj = (key, value) => {
@@ -353,6 +369,7 @@ export default function App() {
                     sequence={sequence}
                     playing={playing}
                     onTogglePlay={() => setPlaying((p) => !p)}
+                    holdFrame={holdFrame}
                     previewScale={previewScale}
                     crop={crop}
                     onCropChange={(rect) => setCrop((c) => ({ ...c, rect }))}
@@ -468,7 +485,7 @@ export default function App() {
               <button className={adjust.matchEnabled ? 'toggled' : ''} onClick={toggleAutoMatch}>
                 {adjust.matchEnabled ? '✓ Auto-match on (click to disable)' : 'Auto-match frames'}
               </button>
-              <Histograms frames={previewFrames} selected={adjFrameSel} onSelect={setAdjFrameSel} />
+              <Histograms frames={previewFrames} selected={adjFrameSel} onSelect={selectAdjFrame} />
               <div className="seg">
                 {FRAME_LABELS.map((label, i) => {
                   const f = adjust.frames[i]
@@ -479,7 +496,7 @@ export default function App() {
                     <button
                       key={i}
                       className={adjFrameSel === i ? 'toggled' : ''}
-                      onClick={() => setAdjFrameSel(i)}
+                      onClick={() => selectAdjFrame(i)}
                     >
                       {label}
                       {touched && <span className="dot" />}

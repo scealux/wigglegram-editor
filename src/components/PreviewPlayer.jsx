@@ -4,11 +4,14 @@ import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons'
 
 const HANDLE = 16 // canvas px
 
+const FRAME_NAMES = ['Left frame', 'Center frame', 'Right frame']
+
 export default function PreviewPlayer({
   frames, // [canvas ×3] at preview scale, uncropped
   sequence, // [{frame, duration}]
   playing,
   onTogglePlay,
+  holdFrame, // 0|1|2 while the user is adjusting that frame; null to animate
   previewScale, // source px → preview canvas px
   crop, // {enabled, rect} — rect in source coords, or null
   onCropChange,
@@ -16,7 +19,7 @@ export default function PreviewPlayer({
   const canvasRef = useRef(null)
   const stateRef = useRef({ step: 0, nextAt: 0 })
   const propsRef = useRef({})
-  propsRef.current = { frames, sequence, playing, crop, previewScale, onCropChange }
+  propsRef.current = { frames, sequence, playing, holdFrame, crop, previewScale, onCropChange }
   const dragRef = useRef(null)
 
   const w = frames[0].width
@@ -25,7 +28,9 @@ export default function PreviewPlayer({
   useEffect(() => {
     let raf
     const tick = (now) => {
-      const { frames, sequence, playing, crop, previewScale } = propsRef.current
+      // Always reschedule first: a transient draw error must never kill the loop.
+      raf = requestAnimationFrame(tick)
+      const { frames, sequence, playing, holdFrame, crop, previewScale } = propsRef.current
       const st = stateRef.current
       if (st.nextAt === 0) st.nextAt = now + sequence[st.step].duration
       if (playing && now >= st.nextAt) {
@@ -35,7 +40,18 @@ export default function PreviewPlayer({
       const canvas = canvasRef.current
       if (canvas) {
         const ctx = canvas.getContext('2d')
-        ctx.drawImage(frames[sequence[st.step].frame], 0, 0)
+        ctx.drawImage(frames[holdFrame ?? sequence[st.step].frame], 0, 0)
+        if (holdFrame != null) {
+          const label = FRAME_NAMES[holdFrame]
+          ctx.font = '600 26px -apple-system, BlinkMacSystemFont, sans-serif'
+          const tw = ctx.measureText(label).width
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+          ctx.beginPath()
+          ctx.roundRect(14, 14, tw + 32, 44, 22)
+          ctx.fill()
+          ctx.fillStyle = '#ffb347'
+          ctx.fillText(label, 30, 45)
+        }
         if (crop.enabled && crop.rect) {
           const s = previewScale
           const r = crop.rect
@@ -57,7 +73,6 @@ export default function PreviewPlayer({
           }
         }
       }
-      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
