@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons'
 
 const HANDLE = 16 // canvas px
 
@@ -131,7 +133,9 @@ export default function PreviewPlayer({
         onPointerUp={() => (dragRef.current = null)}
       />
       <div className="player-controls">
-        <button onClick={onTogglePlay}>{playing ? '❚❚ Pause' : '▶ Play'}</button>
+        <button onClick={onTogglePlay}>
+          <FontAwesomeIcon icon={playing ? faPause : faPlay} /> {playing ? 'Pause' : 'Play'}
+        </button>
       </div>
     </div>
   )

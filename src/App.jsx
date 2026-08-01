@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faChevronLeft, faChevronRight, faXmark } from '@fortawesome/free-solid-svg-icons'
 import AlignView from './components/AlignView.jsx'
 import PreviewPlayer from './components/PreviewPlayer.jsx'
 import Histograms from './components/Histograms.jsx'
@@ -13,7 +15,20 @@ const FRAME_LABELS = ['Left', 'Center', 'Right']
 
 const saved = loadSettings()
 
+const freshAdjust = () => ({
+  frames: [defaultFrameAdjust(), defaultFrameAdjust(), defaultFrameAdjust()],
+  global: defaultGlobalAdjust(),
+  matchEnabled: false,
+})
+
+let nextPhotoId = 1
+
 export default function App() {
+  // Photo queue. Each entry: {id, file, name, edits|null}. Only the active
+  // photo's bitmap is decoded and held in `image` to keep memory reasonable.
+  const [photos, setPhotos] = useState([])
+  const [cur, setCur] = useState(0)
+
   const [image, setImage] = useState(null)
   const [splitMode, setSplitMode] = useState(saved.splitMode || 'thirds')
   const [autoBounds, setAutoBounds] = useState(null)
@@ -21,11 +36,7 @@ export default function App() {
   const [tab, setTab] = useState('align')
   const [playing, setPlaying] = useState(true)
   const [timing, setTiming] = useState(saved.timing || { speed: 1, perFrame: [90, 90, 90] })
-  const [adjust, setAdjust] = useState({
-    frames: [defaultFrameAdjust(), defaultFrameAdjust(), defaultFrameAdjust()],
-    global: defaultGlobalAdjust(),
-    matchEnabled: false,
-  })
+  const [adjust, setAdjust] = useState(freshAdjust())
   const [match, setMatch] = useState(null)
   const [adjFrameSel, setAdjFrameSel] = useState(0)
   const [crop, setCrop] = useState({ enabled: false, rect: null })
@@ -54,29 +65,92 @@ export default function App() {
     return splitThirds(image.width, image.height)
   }, [image, splitMode, autoBounds])
 
-  // Detect boundaries lazily when auto mode is first used per image
+  // Detect boundaries lazily when auto mode is first used per photo
   useEffect(() => {
     if (image && splitMode === 'auto' && !autoBounds) {
       setAutoBounds(detectBoundaries(image.bitmap))
     }
   }, [image, splitMode, autoBounds])
 
-  const loadFile = useCallback(async (file) => {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    setImage({ bitmap, width: bitmap.width, height: bitmap.height, name: file.name || 'photo' })
-    setPoints([null, null, null])
-    setAutoBounds(null)
-    setMatch(null)
-    setAdjust((a) => ({ ...a, matchEnabled: false }))
-    setCrop({ enabled: false, rect: null })
-    setTab('align')
+  const snapshotEdits = () => ({ points, autoBounds, match, adjust, crop })
+
+  // Decode a queue entry's bitmap and load its saved edits into the working state.
+  const activate = useCallback(async (idx, arr) => {
+    const p = arr[idx]
+    setBusy('Loading photo…')
+    try {
+      const bitmap = await createImageBitmap(p.file, { imageOrientation: 'from-image' })
+      setImage((prev) => {
+        prev?.bitmap.close?.()
+        return { bitmap, width: bitmap.width, height: bitmap.height, name: p.name }
+      })
+      const e = p.edits
+      setPoints(e?.points ?? [null, null, null])
+      setAutoBounds(e?.autoBounds ?? null)
+      setMatch(e?.match ?? null)
+      setAdjust(e?.adjust ?? freshAdjust())
+      setCrop(e?.crop ?? { enabled: false, rect: null })
+      setTab(e?.points?.every(Boolean) ? 'preview' : 'align')
+      setCur(idx)
+    } finally {
+      setBusy(null)
+    }
   }, [])
+
+  const loadFiles = useCallback(
+    async (fileList) => {
+      const files = [...fileList].filter((f) => f.type.startsWith('image/'))
+      if (!files.length) return
+      const entries = files.map((file) => ({
+        id: nextPhotoId++,
+        file,
+        name: file.name || 'photo',
+        edits: null,
+      }))
+      const wasEmpty = photos.length === 0
+      const arr = wasEmpty ? entries : [...photos, ...entries]
+      if (!wasEmpty) {
+        // keep current working state safe before the array reshuffles
+        arr[cur] = { ...arr[cur], edits: snapshotEdits() }
+      }
+      setPhotos(arr)
+      if (wasEmpty) await activate(0, arr)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [photos, cur, points, autoBounds, match, adjust, crop, activate]
+  )
+
+  const goto = useCallback(
+    async (idx) => {
+      if (idx < 0 || idx >= photos.length || idx === cur) return
+      const arr = photos.map((p, i) => (i === cur ? { ...p, edits: snapshotEdits() } : p))
+      setPhotos(arr)
+      await activate(idx, arr)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [photos, cur, points, autoBounds, match, adjust, crop, activate]
+  )
+
+  const removeCurrent = useCallback(async () => {
+    const arr = photos.filter((_, i) => i !== cur)
+    setPhotos(arr)
+    if (!arr.length) {
+      setImage((prev) => {
+        prev?.bitmap.close?.()
+        return null
+      })
+      setPreviewFrames(null)
+      setCur(0)
+      return
+    }
+    await activate(Math.min(cur, arr.length - 1), arr)
+  }, [photos, cur, activate])
 
   const loadExample = useCallback(async () => {
     const res = await fetch(import.meta.env.BASE_URL + 'example.jpg')
     const blob = await res.blob()
-    await loadFile(new File([blob], 'example.jpg', { type: 'image/jpeg' }))
-  }, [loadFile])
+    await loadFiles([new File([blob], 'example.jpg', { type: 'image/jpeg' })])
+  }, [loadFiles])
 
   // Debounced preview composition
   useEffect(() => {
@@ -129,13 +203,7 @@ export default function App() {
     setAdjust((a) => ({ ...a, global: { ...a.global, [key]: value } }))
   }
 
-  const resetAdjust = () => {
-    setAdjust({
-      frames: [defaultFrameAdjust(), defaultFrameAdjust(), defaultFrameAdjust()],
-      global: defaultGlobalAdjust(),
-      matchEnabled: false,
-    })
-  }
+  const resetAdjust = () => setAdjust(freshAdjust())
 
   const autoCrop = () => {
     const r = overlapRect(frameRects, points)
@@ -192,8 +260,7 @@ export default function App() {
   const onDrop = (e) => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file && file.type.startsWith('image/')) loadFile(file)
+    if (e.dataTransfer.files?.length) loadFiles(e.dataTransfer.files)
   }
 
   const pointsComplete = points.every(Boolean)
@@ -218,16 +285,16 @@ export default function App() {
           </span>
         )}
         <button onClick={() => fileInputRef.current.click()}>
-          {image ? 'New photo' : 'Open photo'}
+          {photos.length ? 'Add photos' : 'Open photos'}
         </button>
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           hidden
           onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) loadFile(f)
+            if (e.target.files?.length) loadFiles(e.target.files)
             e.target.value = ''
           }}
         />
@@ -235,14 +302,14 @@ export default function App() {
 
       {!image ? (
         <div className={`dropzone ${dragOver ? 'drag-over' : ''}`}>
-          <div className="big">Drop a wigglegram JPEG here</div>
+          <div className="big">Drop wigglegram JPEGs here</div>
           <div>
-            The triptych straight off your camera — three frames side by side. Everything runs in
-            your browser; nothing is uploaded.
+            One or many — the triptychs straight off your camera. Everything runs in your browser;
+            nothing is uploaded.
           </div>
           <div className="btn-row" style={{ width: 'auto' }}>
             <button className="primary" onClick={() => fileInputRef.current.click()}>
-              Choose a photo
+              Choose photos
             </button>
             <button onClick={loadExample}>Try the example</button>
           </div>
@@ -269,6 +336,13 @@ export default function App() {
                     : ''}
               </span>
             </div>
+            <button
+              className="remove-photo"
+              title="Remove this photo from the queue"
+              onClick={removeCurrent}
+            >
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
             <div className="stage-body">
               {tab === 'align' ? (
                 <AlignView image={image} frameRects={frameRects} points={points} onSetPoint={setPoint} />
@@ -286,6 +360,23 @@ export default function App() {
                 )
               )}
             </div>
+            {photos.length > 1 && (
+              <div className="queue-nav">
+                <button disabled={cur === 0 || !!busy} onClick={() => goto(cur - 1)} title="Previous photo">
+                  <FontAwesomeIcon icon={faChevronLeft} />
+                </button>
+                <span>
+                  {cur + 1} of {photos.length}
+                </span>
+                <button
+                  disabled={cur === photos.length - 1 || !!busy}
+                  onClick={() => goto(cur + 1)}
+                  title="Next photo"
+                >
+                  <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+              </div>
+            )}
           </div>
 
           <aside className="panel">

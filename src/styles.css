@@ -102,6 +102,47 @@ button.toggled {
   flex-direction: column;
   padding: 12px 16px;
   min-width: 0;
+  position: relative;
+}
+
+.remove-photo {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 15px;
+  color: var(--text-dim);
+  z-index: 2;
+}
+
+.remove-photo:hover {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.queue-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 0 2px;
+}
+
+.queue-nav span {
+  color: var(--text-dim);
+  font-size: 13px;
+  min-width: 64px;
+  text-align: center;
+}
+
+.queue-nav button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
 }
 
 .tabs {
