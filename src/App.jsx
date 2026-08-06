@@ -358,7 +358,7 @@ export default function App() {
         </div>
       ) : (
         <div className="main">
-          <div className="stage">
+          <div className={`stage ${tab === 'preview' ? 'stage-sticky' : ''}`}>
             <div className="tabs">
               <button className={tab === 'align' ? 'toggled' : ''} onClick={() => setTab('align')}>
                 1 · Align
@@ -486,38 +486,30 @@ export default function App() {
               </h2>
               <div className="row">
                 <label>Speed</label>
-                <input
-                  type="range"
-                  min="0.4"
-                  max="2.5"
-                  step="0.05"
+                <Slider
+                  min={0.4}
+                  max={2.5}
+                  step={0.05}
+                  def={1}
                   value={timing.speed}
-                  onChange={(e) => setTiming({ ...timing, speed: +e.target.value })}
-                  onDoubleClick={() => setTiming({ ...timing, speed: 1 })}
-                  title="Double-click to reset"
+                  onChange={(v) => setTiming({ ...timing, speed: v })}
                 />
                 <span className="val">{timing.speed.toFixed(2)}×</span>
               </div>
               {FRAME_LABELS.map((label, i) => (
                 <div className="row" key={i}>
                   <label>{label}</label>
-                  <input
-                    type="range"
-                    min="30"
-                    max="400"
-                    step="5"
+                  <Slider
+                    min={30}
+                    max={400}
+                    step={5}
+                    def={90}
                     value={timing.perFrame[i]}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       const perFrame = [...timing.perFrame]
-                      perFrame[i] = +e.target.value
+                      perFrame[i] = v
                       setTiming({ ...timing, perFrame })
                     }}
-                    onDoubleClick={() => {
-                      const perFrame = [...timing.perFrame]
-                      perFrame[i] = 90
-                      setTiming({ ...timing, perFrame })
-                    }}
-                    title="Double-click to reset"
                   />
                   <span className="val">{timing.perFrame[i]}ms</span>
                 </div>
@@ -629,6 +621,46 @@ export default function App() {
   )
 }
 
+// Range input that resets to its default on double-click (mouse) or
+// double-tap (touch — mobile browsers don't reliably synthesize dblclick).
+// The touch detector is a native listener so it can preventDefault before the
+// browser starts dragging the thumb to the tap position.
+function Slider({ min, max, step, value, def, onChange }) {
+  const inputRef = useRef(null)
+  const cbRef = useRef({ def, onChange })
+  cbRef.current = { def, onChange }
+  useEffect(() => {
+    const el = inputRef.current
+    let last = 0
+    const onDown = (e) => {
+      if (e.pointerType !== 'touch') return
+      const now = performance.now()
+      if (now - last < 350) {
+        e.preventDefault()
+        cbRef.current.onChange(cbRef.current.def)
+        last = 0
+      } else {
+        last = now
+      }
+    }
+    el.addEventListener('pointerdown', onDown)
+    return () => el.removeEventListener('pointerdown', onDown)
+  }, [])
+  return (
+    <input
+      ref={inputRef}
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(+e.target.value)}
+      onDoubleClick={() => onChange(def)}
+      title="Double-click or double-tap to reset"
+    />
+  )
+}
+
 function AdjustSliders({ values, onChange }) {
   const rows = [
     { key: 'brightness', label: 'Brightness', min: -60, max: 60, step: 1, def: 0 },
@@ -642,15 +674,13 @@ function AdjustSliders({ values, onChange }) {
       {rows.map(({ key, label, min, max, step, def }) => (
         <div className={`row ${(values[key] ?? def) !== def ? 'changed' : ''}`} key={key}>
           <label>{label}</label>
-          <input
-            type="range"
+          <Slider
             min={min}
             max={max}
             step={step}
+            def={def}
             value={values[key] ?? def}
-            onChange={(e) => onChange(key, +e.target.value)}
-            onDoubleClick={() => onChange(key, def)}
-            title="Double-click to reset"
+            onChange={(v) => onChange(key, v)}
           />
           <span className="val">
             {key === 'saturation' ? (values[key] ?? def).toFixed(2) : (values[key] ?? def)}

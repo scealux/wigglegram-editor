@@ -439,4 +439,19 @@ select {
   .remove-photo { width: 40px; height: 40px; }
   .stage { padding: 10px 12px; }
   .busy { bottom: 14px; }
+
+  /* Keep the playing preview pinned while the settings scroll beneath it,
+     so edits are visible as you make them. */
+  .stage-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stage-sticky .preview-wrap canvas { max-height: 36vh; }
+  .stage-sticky .player-controls { margin-top: 6px; }
+  .stage-sticky .player-controls button { min-height: 36px; padding: 5px 14px; }
+  .stage-sticky .queue-nav { padding: 6px 0 0; }
 }
