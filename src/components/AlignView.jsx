@@ -13,7 +13,8 @@ import { buildLuts, applyAdjustments, isDefaultAdjust } from '../lib/adjust.js'
 const LABELS = ['Left', 'Center', 'Right']
 const DISPLAY_H = 1300 // canvas pixel height (CSS scales it down)
 const LOUPE = 300 // loupe size in canvas px
-const ZOOMS = [1, 2, 4] // loupe px per source px
+const ZOOMS = [1, 2, 4, 8] // loupe px per source px
+const STRIP_H = 340 // docked magnifier height in canvas px (mobile)
 
 const hasWork = (p) => !!p.match || !isDefaultAdjust(p.fa) || !isDefaultAdjust(p.ga)
 
@@ -28,7 +29,7 @@ function useNarrow() {
   return narrow
 }
 
-function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad }) {
+function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad, dock }) {
   const canvasRef = useRef(null)
   const loupeSrcRef = useRef(null)
   const [cursor, setCursor] = useState(null) // frame-local source coords while dragging
@@ -106,7 +107,48 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coar
       ctx.stroke()
     }
 
-    if (loupeAt) {
+    if (loupeAt && dock) {
+      // Docked magnifier: a fixed full-width strip across the top of the
+      // photo, so it never jumps around or hides under a thumb.
+      const srcW = cw / zoom
+      const srcH = STRIP_H / zoom
+      if (!loupeSrcRef.current) loupeSrcRef.current = document.createElement('canvas')
+      const lc = loupeSrcRef.current
+      if (lc.width !== cw || lc.height !== STRIP_H) {
+        lc.width = cw
+        lc.height = STRIP_H
+      }
+      const lctx = lc.getContext('2d', { willReadFrequently: true })
+      lctx.fillStyle = '#000'
+      lctx.fillRect(0, 0, cw, STRIP_H)
+      lctx.imageSmoothingEnabled = zoom < 2
+      lctx.drawImage(
+        bitmap,
+        rect.x + loupeAt.x - srcW / 2, rect.y + loupeAt.y - srcH / 2, srcW, srcH,
+        0, 0, cw, STRIP_H
+      )
+      lctx.imageSmoothingEnabled = true
+      if (luts) {
+        const imageData = lctx.getImageData(0, 0, cw, STRIP_H)
+        applyAdjustments(imageData, luts, saturation)
+        lctx.putImageData(imageData, 0, 0)
+      }
+      ctx.drawImage(lc, 0, 0)
+      ctx.strokeStyle = '#ffb347'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(cw / 2 - 18, STRIP_H / 2)
+      ctx.lineTo(cw / 2 + 18, STRIP_H / 2)
+      ctx.moveTo(cw / 2, STRIP_H / 2 - 18)
+      ctx.lineTo(cw / 2, STRIP_H / 2 + 18)
+      ctx.stroke()
+      ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(0, STRIP_H + 1)
+      ctx.lineTo(cw, STRIP_H + 1)
+      ctx.stroke()
+    } else if (loupeAt) {
       const src = LOUPE / zoom // source px shown in the loupe
       const x = loupeAt.x * dispScale
       const y = loupeAt.y * dispScale
@@ -119,12 +161,12 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coar
 
       // Render the zoomed region (with adjustments) into an offscreen canvas so
       // the pixel pass never touches what's already drawn on the panel.
-      if (!loupeSrcRef.current) {
-        loupeSrcRef.current = document.createElement('canvas')
-        loupeSrcRef.current.width = LOUPE
-        loupeSrcRef.current.height = LOUPE
-      }
+      if (!loupeSrcRef.current) loupeSrcRef.current = document.createElement('canvas')
       const lc = loupeSrcRef.current
+      if (lc.width !== LOUPE || lc.height !== LOUPE) {
+        lc.width = LOUPE
+        lc.height = LOUPE
+      }
       const lctx = lc.getContext('2d', { willReadFrequently: true })
       lctx.fillStyle = '#000'
       lctx.fillRect(0, 0, LOUPE, LOUPE)
@@ -222,6 +264,12 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coar
         tabIndex={0}
         onPointerDown={(e) => {
           e.currentTarget.focus()
+          if (dock && loupeAt) {
+            // Taps on the docked magnifier strip must not move the point.
+            const r = e.currentTarget.getBoundingClientRect()
+            const canvasY = (e.clientY - r.top) * (ch / r.height)
+            if (canvasY < STRIP_H) return
+          }
           const p = toFrameCoords(e)
           if (coarse || e.pointerType === 'touch') {
             // Touch: place on tap only — dragging or lifting the thumb must
@@ -359,7 +407,7 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
             </button>
           ))}
         </div>
-        <div className="seg" style={{ width: 110 }}>
+        <div className="seg" style={{ width: 160 }}>
           {ZOOMS.map((z) => (
             <button key={z} className={zoom === z ? 'toggled' : ''} onClick={() => setZoom(z)}>
               {z}×
@@ -380,6 +428,7 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
         params={perFrame[mobileFrame]}
         coarse={coarse}
         showPad
+        dock
         onSetPoint={(p) => onSetPoint(mobileFrame, p)}
       />
       <div className="frame-nav">

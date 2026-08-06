@@ -212,10 +212,14 @@ export default function App() {
 
   const toggleAutoMatch = () => {
     if (!adjust.matchEnabled) {
-      // Match the other frames to the currently selected frame, including its
-      // current slider state — recomputed on every enable.
-      setMatch(computeExposureMatch(image.bitmap, frameRects, adjFrameSel, adjust.frames))
-      setAdjust((a) => ({ ...a, matchEnabled: true }))
+      // Copy the reference frame's slider positions to the other frames first
+      // (so saturation/temp/tint edits carry over and the sliders show the
+      // real starting point), then compute the residual per-channel match on
+      // top of those copied settings.
+      const refAdj = adjust.frames[adjFrameSel]
+      const frames = adjust.frames.map(() => ({ ...refAdj }))
+      setMatch(computeExposureMatch(image.bitmap, frameRects, adjFrameSel, frames))
+      setAdjust((a) => ({ ...a, frames, matchEnabled: true }))
     } else {
       setAdjust((a) => ({ ...a, matchEnabled: false }))
     }
