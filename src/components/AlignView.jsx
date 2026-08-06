@@ -9,6 +9,7 @@ import {
   faChevronRight,
 } from '@fortawesome/free-solid-svg-icons'
 import { buildLuts, applyAdjustments, isDefaultAdjust } from '../lib/adjust.js'
+import { useNarrow } from '../lib/useNarrow.js'
 
 const LABELS = ['Left', 'Center', 'Right']
 const DISPLAY_H = 1300 // canvas pixel height (CSS scales it down)
@@ -18,18 +19,7 @@ const STRIP_H = 340 // docked magnifier height in canvas px (mobile)
 
 const hasWork = (p) => !!p.match || !isDefaultAdjust(p.fa) || !isDefaultAdjust(p.ga)
 
-function useNarrow() {
-  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 860px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 860px)')
-    const fn = (e) => setNarrow(e.matches)
-    mq.addEventListener('change', fn)
-    return () => mq.removeEventListener('change', fn)
-  }, [])
-  return narrow
-}
-
-function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad, dock }) {
+function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad, dock, hideLabel }) {
   const canvasRef = useRef(null)
   const loupeSrcRef = useRef(null)
   const [cursor, setCursor] = useState(null) // frame-local source coords while dragging
@@ -254,9 +244,11 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coar
 
   return (
     <div className="align-panel">
-      <div className={`label ${point ? 'done' : ''}`}>
-        {label} {point ? '✓' : coarse ? '— tap your anchor point' : '— click your anchor point'}
-      </div>
+      {!hideLabel && (
+        <div className={`label ${point ? 'done' : ''}`}>
+          {label} {point ? '✓' : coarse ? '— tap your anchor point' : '— click your anchor point'}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         width={cw}
@@ -390,47 +382,48 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
     )
   }
 
-  // Narrow layout: one frame at a time with prev/next navigation, so the
-  // frame fills the screen and the same point is easy to hit on each photo.
+  // Narrow layout: one frame at a time. The portrait frame leaves horizontal
+  // room, so frame selection and zoom live in a rail beside the photo instead
+  // of stacking above it — the photo starts higher and more of the screen is
+  // left for the settings below.
   return (
     <div className="align-outer">
-      <div className="align-toolbar">
-        <div className="seg frame-chips">
-          {LABELS.map((label, i) => (
-            <button
-              key={i}
-              className={mobileFrame === i ? 'toggled' : ''}
-              onClick={() => setMobileFrame(i)}
-            >
-              {label}
-              {points[i] ? ' ✓' : ''}
-            </button>
-          ))}
-        </div>
-        <div className="seg" style={{ width: 160 }}>
-          {ZOOMS.map((z) => (
-            <button key={z} className={zoom === z ? 'toggled' : ''} onClick={() => setZoom(z)}>
-              {z}×
-            </button>
-          ))}
+      <div className="align-mobile-row">
+        <FramePanel
+          bitmap={image.bitmap}
+          rect={frameRects[mobileFrame]}
+          point={points[mobileFrame]}
+          label={LABELS[mobileFrame]}
+          zoom={zoom}
+          params={perFrame[mobileFrame]}
+          coarse={coarse}
+          showPad
+          dock
+          hideLabel
+          onSetPoint={(p) => onSetPoint(mobileFrame, p)}
+        />
+        <div className="side-rail">
+          <div className="seg-vert">
+            {LABELS.map((label, i) => (
+              <button
+                key={i}
+                className={mobileFrame === i ? 'toggled' : ''}
+                onClick={() => setMobileFrame(i)}
+              >
+                {label}
+                {points[i] ? ' ✓' : ''}
+              </button>
+            ))}
+          </div>
+          <div className="seg-vert">
+            {ZOOMS.map((z) => (
+              <button key={z} className={zoom === z ? 'toggled' : ''} onClick={() => setZoom(z)}>
+                {z}×
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="muted" style={{ textAlign: 'center' }}>
-        Tap the anchor point, then fine-tune with the arrows. Set the same point in all three
-        frames.
-      </div>
-      <FramePanel
-        bitmap={image.bitmap}
-        rect={frameRects[mobileFrame]}
-        point={points[mobileFrame]}
-        label={LABELS[mobileFrame]}
-        zoom={zoom}
-        params={perFrame[mobileFrame]}
-        coarse={coarse}
-        showPad
-        dock
-        onSetPoint={(p) => onSetPoint(mobileFrame, p)}
-      />
       <div className="frame-nav">
         <button disabled={mobileFrame === 0} onClick={() => setMobileFrame((f) => f - 1)}>
           <FontAwesomeIcon icon={faChevronLeft} /> {mobileFrame > 0 ? LABELS[mobileFrame - 1] : ''}

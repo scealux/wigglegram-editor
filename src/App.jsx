@@ -9,7 +9,10 @@ import {
   faSliders,
   faCrop,
   faDownload,
+  faPlay,
+  faPause,
 } from '@fortawesome/free-solid-svg-icons'
+import { useNarrow } from './lib/useNarrow.js'
 import AlignView from './components/AlignView.jsx'
 import PreviewPlayer from './components/PreviewPlayer.jsx'
 import Histograms from './components/Histograms.jsx'
@@ -75,6 +78,7 @@ export default function App() {
   const [canMp4] = useState(mp4Supported())
   const [canWebp, setCanWebp] = useState(false)
   const fileInputRef = useRef(null)
+  const narrow = useNarrow()
 
   useEffect(() => {
     webpSupported().then(setCanWebp)
@@ -396,7 +400,50 @@ export default function App() {
                   match={match}
                 />
               ) : (
-                previewFrames && (
+                previewFrames &&
+                (narrow ? (
+                  <div className="preview-row">
+                    <PreviewPlayer
+                      frames={previewFrames}
+                      sequence={sequence}
+                      playing={playing}
+                      onTogglePlay={togglePlay}
+                      hideControls
+                      holdFrame={holdFrame}
+                      previewScale={previewScale}
+                      crop={crop}
+                      onCropChange={(rect) => setCrop((c) => ({ ...c, rect }))}
+                    />
+                    <div className="side-rail">
+                      <button className="rail-btn" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
+                        <FontAwesomeIcon icon={playing ? faPause : faPlay} />
+                      </button>
+                      {photos.length > 1 && (
+                        <>
+                          <button
+                            className="rail-btn"
+                            disabled={cur === 0 || !!busy}
+                            onClick={() => goto(cur - 1)}
+                            title="Previous photo"
+                          >
+                            <FontAwesomeIcon icon={faChevronLeft} />
+                          </button>
+                          <span className="rail-count">
+                            {cur + 1}/{photos.length}
+                          </span>
+                          <button
+                            className="rail-btn"
+                            disabled={cur === photos.length - 1 || !!busy}
+                            onClick={() => goto(cur + 1)}
+                            title="Next photo"
+                          >
+                            <FontAwesomeIcon icon={faChevronRight} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                   <PreviewPlayer
                     frames={previewFrames}
                     sequence={sequence}
@@ -407,10 +454,10 @@ export default function App() {
                     crop={crop}
                     onCropChange={(rect) => setCrop((c) => ({ ...c, rect }))}
                   />
-                )
+                ))
               )}
             </div>
-            {photos.length > 1 && (
+            {photos.length > 1 && !(narrow && tab === 'preview') && (
               <div className="queue-nav">
                 <button disabled={cur === 0 || !!busy} onClick={() => goto(cur - 1)} title="Previous photo">
                   <FontAwesomeIcon icon={faChevronLeft} />

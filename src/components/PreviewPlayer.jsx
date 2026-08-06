@@ -11,6 +11,7 @@ export default function PreviewPlayer({
   sequence, // [{frame, duration}]
   playing,
   onTogglePlay,
+  hideControls, // controls rendered externally (mobile side rail)
   holdFrame, // 0|1|2 while the user is adjusting that frame; null to animate
   previewScale, // source px → preview canvas px
   crop, // {enabled, rect} — rect in source coords, or null
@@ -148,11 +149,13 @@ export default function PreviewPlayer({
         onPointerMove={onPointerMove}
         onPointerUp={() => (dragRef.current = null)}
       />
-      <div className="player-controls">
-        <button onClick={onTogglePlay}>
-          <FontAwesomeIcon icon={playing ? faPause : faPlay} /> {playing ? 'Pause' : 'Play'}
-        </button>
-      </div>
+      {!hideControls && (
+        <div className="player-controls">
+          <button onClick={onTogglePlay}>
+            <FontAwesomeIcon icon={playing ? faPause : faPlay} /> {playing ? 'Pause' : 'Play'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
