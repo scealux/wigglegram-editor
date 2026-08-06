@@ -53,6 +53,9 @@ button {
   padding: 7px 12px;
   font-size: 13px;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:hover:not(:disabled) { border-color: var(--text-dim); }
@@ -198,6 +201,57 @@ button.toggled {
 .align-panel canvas:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.nudge-pad {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  grid-auto-rows: 46px;
+  gap: 6px;
+}
+
+.pad-btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 16px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pad-step {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.frame-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.frame-nav button {
+  flex: 1;
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.frame-chips {
+  flex: 1;
 }
 
 .preview-wrap { text-align: center; max-width: 100%; }
@@ -365,6 +419,24 @@ select {
 @media (max-width: 860px) {
   #root { height: auto; min-height: 100vh; overflow: visible; }
   .main { flex-direction: column; }
-  .panel { width: 100%; border-left: none; border-top: 1px solid var(--border); }
-  .align-panel canvas, .preview-wrap canvas { max-height: 56vh; }
+  .panel { width: 100%; border-left: none; border-top: 1px solid var(--border); padding: 14px; gap: 16px; }
+  .align-panel canvas, .preview-wrap canvas { max-height: 52vh; }
+  .align-panel { width: 100%; }
+  .align-panel canvas { width: 100%; height: auto; max-width: none; object-fit: contain; }
+  .tabs .hint { display: none; }
+  .align-toolbar { flex-wrap: wrap; gap: 8px; }
+  header .muted {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 34vw;
+  }
+  button { min-height: 40px; }
+  .seg button { min-height: 38px; }
+  input[type='range'] { height: 34px; }
+  .row { gap: 10px; }
+  .queue-nav button { width: 46px; height: 46px; }
+  .remove-photo { width: 40px; height: 40px; }
+  .stage { padding: 10px 12px; }
+  .busy { bottom: 14px; }
 }

@@ -1,4 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  faArrowUp,
+  faArrowDown,
+  faArrowLeft,
+  faArrowRight,
+  faChevronLeft,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons'
 import { buildLuts, applyAdjustments, isDefaultAdjust } from '../lib/adjust.js'
 
 const LABELS = ['Left', 'Center', 'Right']
@@ -8,21 +17,42 @@ const ZOOMS = [1, 2, 4] // loupe px per source px
 
 const hasWork = (p) => !!p.match || !isDefaultAdjust(p.fa) || !isDefaultAdjust(p.ga)
 
-function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 860px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 860px)')
+    const fn = (e) => setNarrow(e.matches)
+    mq.addEventListener('change', fn)
+    return () => mq.removeEventListener('change', fn)
+  }, [])
+  return narrow
+}
+
+function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad }) {
   const canvasRef = useRef(null)
   const loupeSrcRef = useRef(null)
   const [cursor, setCursor] = useState(null) // frame-local source coords while dragging
   const [focused, setFocused] = useState(false)
+  const [padStep, setPadStep] = useState(1)
   // Panel-resolution copy of the frame with exposure/color adjustments baked in,
   // so the align view shows the same look as the preview.
   const [adjusted, setAdjusted] = useState(null)
   const draggingRef = useRef(false)
-  // Latest point, updated synchronously so fast key-repeat doesn't read a
+  const repeatRef = useRef(null)
+  // Latest point, updated synchronously so fast nudge-repeat doesn't read a
   // stale value between React renders.
   const livePointRef = useRef(point)
   useEffect(() => {
     livePointRef.current = point
   }, [point])
+  useEffect(() => () => clearInterval(repeatRef.current), [])
+
+  // When the panel is reused for a different frame (mobile prev/next), drop
+  // state that belongs to the old frame.
+  useEffect(() => {
+    setAdjusted(null)
+    setCursor(null)
+  }, [bitmap, rect.x, rect.y, rect.w, rect.h])
 
   const dispScale = DISPLAY_H / rect.h
   const cw = Math.round(rect.w * dispScale)
@@ -50,8 +80,9 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
     return () => clearTimeout(t)
   }, [bitmap, rect.x, rect.y, rect.w, rect.h, cw, ch, luts, saturation])
 
-  // Loupe anchor: the drag cursor while dragging, else the set point when focused
-  const loupeAt = cursor || (focused && point ? point : null)
+  // Loupe anchor: the drag cursor while dragging, else the set point when
+  // focused (or always on touch layouts, where there is no hover state).
+  const loupeAt = cursor || ((focused || coarse) && point ? point : null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -154,10 +185,35 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
     onSetPoint(np)
   }
 
+  const startRepeat = (dx, dy) => {
+    nudge(dx, dy)
+    clearInterval(repeatRef.current)
+    repeatRef.current = setInterval(() => nudge(dx, dy), 100)
+  }
+  const stopRepeat = () => clearInterval(repeatRef.current)
+
+  const padButton = (icon, dx, dy, key) => (
+    <button
+      key={key}
+      className="pad-btn"
+      disabled={!point}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        startRepeat(dx * padStep, dy * padStep)
+      }}
+      onPointerUp={stopRepeat}
+      onPointerLeave={stopRepeat}
+      onPointerCancel={stopRepeat}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <FontAwesomeIcon icon={icon} />
+    </button>
+  )
+
   return (
     <div className="align-panel">
       <div className={`label ${point ? 'done' : ''}`}>
-        {label} {point ? '✓' : '— click your anchor point'}
+        {label} {point ? '✓' : coarse ? '— tap your anchor point' : '— click your anchor point'}
       </div>
       <canvas
         ref={canvasRef}
@@ -166,9 +222,16 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
         tabIndex={0}
         onPointerDown={(e) => {
           e.currentTarget.focus()
+          const p = toFrameCoords(e)
+          if (coarse || e.pointerType === 'touch') {
+            // Touch: place on tap only — dragging or lifting the thumb must
+            // not smear the point. Fine-tuning happens on the nudge pad.
+            onSetPoint(p)
+            setCursor(p)
+            return
+          }
           e.currentTarget.setPointerCapture(e.pointerId)
           draggingRef.current = true
-          const p = toFrameCoords(e)
           setCursor(p)
           onSetPoint(p)
         }}
@@ -194,12 +257,38 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params }) {
           e.preventDefault()
         }}
       />
+      {showPad && (
+        <div className="nudge-pad">
+          <div className="pad-grid">
+            <span />
+            {padButton(faArrowUp, 0, -1, 'up')}
+            <span />
+            {padButton(faArrowLeft, -1, 0, 'left')}
+            {padButton(faArrowDown, 0, 1, 'down')}
+            {padButton(faArrowRight, 1, 0, 'right')}
+          </div>
+          <button
+            className={`pad-step ${padStep === 10 ? 'toggled' : ''}`}
+            onClick={() => setPadStep((s) => (s === 1 ? 10 : 1))}
+            title="Toggle nudge step size"
+          >
+            ×10
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
 export default function AlignView({ image, frameRects, points, onSetPoint, adjust, match }) {
   const [zoom, setZoom] = useState(2)
+  const [mobileFrame, setMobileFrame] = useState(0)
+  const narrow = useNarrow()
+  const coarse = useMemo(() => window.matchMedia('(pointer: coarse)').matches, [])
+
+  useEffect(() => {
+    setMobileFrame(0)
+  }, [image])
 
   // Stable per-frame adjustment params so point-only re-renders don't rebuild
   // the adjusted panel bitmaps.
@@ -213,34 +302,93 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
     [adjust, match]
   )
 
+  const showPad = coarse || narrow
+
+  if (!narrow) {
+    return (
+      <div className="align-outer">
+        <div className="align-toolbar">
+          <span className="muted">Magnifier zoom</span>
+          <div className="seg" style={{ width: 130 }}>
+            {ZOOMS.map((z) => (
+              <button key={z} className={zoom === z ? 'toggled' : ''} onClick={() => setZoom(z)}>
+                {z}×
+              </button>
+            ))}
+          </div>
+          <span className="muted">
+            {coarse
+              ? 'Tap to place the point, then fine-tune with the arrows.'
+              : 'After clicking, use arrow keys to nudge the point pixel by pixel (Shift = 10 px).'}
+          </span>
+        </div>
+        <div className="align-view">
+          {frameRects.map((rect, i) => (
+            <FramePanel
+              key={i}
+              bitmap={image.bitmap}
+              rect={rect}
+              point={points[i]}
+              label={LABELS[i]}
+              zoom={zoom}
+              params={perFrame[i]}
+              coarse={coarse}
+              showPad={showPad}
+              onSetPoint={(p) => onSetPoint(i, p)}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Narrow layout: one frame at a time with prev/next navigation, so the
+  // frame fills the screen and the same point is easy to hit on each photo.
   return (
     <div className="align-outer">
       <div className="align-toolbar">
-        <span className="muted">Magnifier zoom</span>
-        <div className="seg" style={{ width: 130 }}>
+        <div className="seg frame-chips">
+          {LABELS.map((label, i) => (
+            <button
+              key={i}
+              className={mobileFrame === i ? 'toggled' : ''}
+              onClick={() => setMobileFrame(i)}
+            >
+              {label}
+              {points[i] ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+        <div className="seg" style={{ width: 110 }}>
           {ZOOMS.map((z) => (
             <button key={z} className={zoom === z ? 'toggled' : ''} onClick={() => setZoom(z)}>
               {z}×
             </button>
           ))}
         </div>
-        <span className="muted">
-          After clicking, use arrow keys to nudge the point pixel by pixel (Shift = 10 px).
-        </span>
       </div>
-      <div className="align-view">
-        {frameRects.map((rect, i) => (
-          <FramePanel
-            key={i}
-            bitmap={image.bitmap}
-            rect={rect}
-            point={points[i]}
-            label={LABELS[i]}
-            zoom={zoom}
-            params={perFrame[i]}
-            onSetPoint={(p) => onSetPoint(i, p)}
-          />
-        ))}
+      <div className="muted" style={{ textAlign: 'center' }}>
+        Tap the anchor point, then fine-tune with the arrows. Set the same point in all three
+        frames.
+      </div>
+      <FramePanel
+        bitmap={image.bitmap}
+        rect={frameRects[mobileFrame]}
+        point={points[mobileFrame]}
+        label={LABELS[mobileFrame]}
+        zoom={zoom}
+        params={perFrame[mobileFrame]}
+        coarse={coarse}
+        showPad
+        onSetPoint={(p) => onSetPoint(mobileFrame, p)}
+      />
+      <div className="frame-nav">
+        <button disabled={mobileFrame === 0} onClick={() => setMobileFrame((f) => f - 1)}>
+          <FontAwesomeIcon icon={faChevronLeft} /> {mobileFrame > 0 ? LABELS[mobileFrame - 1] : ''}
+        </button>
+        <button disabled={mobileFrame === 2} onClick={() => setMobileFrame((f) => f + 1)}>
+          {mobileFrame < 2 ? LABELS[mobileFrame + 1] : ''} <FontAwesomeIcon icon={faChevronRight} />
+        </button>
       </div>
     </div>
   )

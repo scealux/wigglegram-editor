@@ -94,8 +94,9 @@ export default function PreviewPlayer({
     const s = previewScale
     const r = crop.rect
     const cs = corners(r.x * s, r.y * s, r.w * s, r.h * s)
+    const slop = HANDLE * (e.pointerType === 'touch' ? 3.5 : 1.6)
     for (let i = 0; i < 4; i++) {
-      if (Math.abs(p.x - cs[i][0]) < HANDLE * 1.6 && Math.abs(p.y - cs[i][1]) < HANDLE * 1.6) {
+      if (Math.abs(p.x - cs[i][0]) < slop && Math.abs(p.y - cs[i][1]) < slop) {
         dragRef.current = { mode: 'resize', corner: i, start: p, rect: { ...r } }
         e.currentTarget.setPointerCapture(e.pointerId)
         return
