@@ -207,8 +207,9 @@ button.toggled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 14px;
   margin-top: 10px;
+  width: 100%;
 }
 
 .pad-grid {
@@ -237,21 +238,25 @@ button.toggled {
   font-weight: 700;
 }
 
-.frame-nav {
+.nav-col {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  max-width: 150px;
 }
 
-.frame-nav button {
-  flex: 1;
+.nav-col button {
   min-height: 46px;
-  font-size: 15px;
+  font-size: 14px;
 }
 
-.frame-chips {
-  flex: 1;
+.icon-round {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 15px;
 }
 
 .align-mobile-row,
@@ -495,8 +500,8 @@ select {
   header h1 { font-size: 14px; white-space: nowrap; }
   header button { min-height: 36px; padding: 5px 10px; }
   .tabs { margin-bottom: 6px; }
-  .align-mobile-row .align-panel { width: auto; }
-  .align-mobile-row .align-panel canvas { max-height: 48vh; width: auto; max-width: 100%; }
+  .align-mobile-row .align-panel { width: auto; flex: 1; }
+  .align-mobile-row .align-panel canvas { max-height: 54vh; width: auto; max-width: 100%; }
   .preview-row .preview-wrap canvas { max-height: 44vh; }
 
   /* Keep the playing preview pinned while the settings scroll beneath it,

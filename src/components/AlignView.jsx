@@ -19,7 +19,7 @@ const STRIP_H = 340 // docked magnifier height in canvas px (mobile)
 
 const hasWork = (p) => !!p.match || !isDefaultAdjust(p.fa) || !isDefaultAdjust(p.ga)
 
-function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad, dock, hideLabel }) {
+function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coarse, showPad, dock, hideLabel, navSlot }) {
   const canvasRef = useRef(null)
   const loupeSrcRef = useRef(null)
   const [cursor, setCursor] = useState(null) // frame-local source coords while dragging
@@ -314,13 +314,14 @@ function FramePanel({ bitmap, rect, point, onSetPoint, label, zoom, params, coar
           >
             ×10
           </button>
+          {navSlot}
         </div>
       )}
     </div>
   )
 }
 
-export default function AlignView({ image, frameRects, points, onSetPoint, adjust, match }) {
+export default function AlignView({ image, frameRects, points, onSetPoint, adjust, match, onDone }) {
   const [zoom, setZoom] = useState(2)
   const [mobileFrame, setMobileFrame] = useState(0)
   const narrow = useNarrow()
@@ -386,6 +387,8 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
   // room, so frame selection and zoom live in a rail beside the photo instead
   // of stacking above it — the photo starts higher and more of the screen is
   // left for the settings below.
+  const allSet = points.every(Boolean)
+
   return (
     <div className="align-outer">
       <div className="align-mobile-row">
@@ -401,6 +404,26 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
           dock
           hideLabel
           onSetPoint={(p) => onSetPoint(mobileFrame, p)}
+          navSlot={
+            <div className="nav-col">
+              <button
+                disabled={mobileFrame === 0}
+                onClick={() => setMobileFrame((f) => f - 1)}
+              >
+                <FontAwesomeIcon icon={faChevronLeft} />{' '}
+                {mobileFrame > 0 ? LABELS[mobileFrame - 1] : ''}
+              </button>
+              {mobileFrame < 2 ? (
+                <button onClick={() => setMobileFrame((f) => f + 1)}>
+                  {LABELS[mobileFrame + 1]} <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+              ) : (
+                <button className="primary" disabled={!allSet} onClick={onDone}>
+                  Preview <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+              )}
+            </div>
+          }
         />
         <div className="side-rail">
           <div className="seg-vert">
@@ -423,14 +446,6 @@ export default function AlignView({ image, frameRects, points, onSetPoint, adjus
             ))}
           </div>
         </div>
-      </div>
-      <div className="frame-nav">
-        <button disabled={mobileFrame === 0} onClick={() => setMobileFrame((f) => f - 1)}>
-          <FontAwesomeIcon icon={faChevronLeft} /> {mobileFrame > 0 ? LABELS[mobileFrame - 1] : ''}
-        </button>
-        <button disabled={mobileFrame === 2} onClick={() => setMobileFrame((f) => f + 1)}>
-          {mobileFrame < 2 ? LABELS[mobileFrame + 1] : ''} <FontAwesomeIcon icon={faChevronRight} />
-        </button>
       </div>
     </div>
   )

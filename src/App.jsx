@@ -11,6 +11,7 @@ import {
   faDownload,
   faPlay,
   faPause,
+  faImages,
 } from '@fortawesome/free-solid-svg-icons'
 import { useNarrow } from './lib/useNarrow.js'
 import AlignView from './components/AlignView.jsx'
@@ -321,30 +322,34 @@ export default function App() {
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      <header>
-        <h1>
-          Wiggle<span>gram</span> Editor
-        </h1>
-        {image && (
-          <span className="muted">
-            {image.name} · {image.width}×{image.height}
-          </span>
-        )}
-        <button onClick={() => fileInputRef.current.click()}>
-          {photos.length ? 'Add photos' : 'Open photos'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            if (e.target.files?.length) loadFiles(e.target.files)
-            e.target.value = ''
-          }}
-        />
-      </header>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          if (e.target.files?.length) loadFiles(e.target.files)
+          e.target.value = ''
+        }}
+      />
+      {/* While editing on a phone every vertical pixel counts — the branding
+          header only shows on the landing screen / desktop. */}
+      {!(narrow && image) && (
+        <header>
+          <h1>
+            Wiggle<span>gram</span> Editor
+          </h1>
+          {image && (
+            <span className="muted">
+              {image.name} · {image.width}×{image.height}
+            </span>
+          )}
+          <button onClick={() => fileInputRef.current.click()}>
+            {photos.length ? 'Add photos' : 'Open photos'}
+          </button>
+        </header>
+      )}
 
       {!image ? (
         <div className={`dropzone ${dragOver ? 'drag-over' : ''}`}>
@@ -374,6 +379,15 @@ export default function App() {
               >
                 2 · Preview
               </button>
+              {narrow && (
+                <button
+                  className="icon-round"
+                  onClick={() => fileInputRef.current.click()}
+                  title="Add photos"
+                >
+                  <FontAwesomeIcon icon={faImages} />
+                </button>
+              )}
               <span className="hint">
                 {tab === 'align'
                   ? 'Click the same point in all three frames — that point becomes the pivot of the wiggle.'
@@ -398,6 +412,7 @@ export default function App() {
                   onSetPoint={setPoint}
                   adjust={adjust}
                   match={match}
+                  onDone={() => setTab('preview')}
                 />
               ) : (
                 previewFrames &&
